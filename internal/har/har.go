@@ -2,12 +2,15 @@
 package har
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/floriankraemer/http-api-spec/validator/internal/response"
@@ -44,36 +47,138 @@ type rawEntry struct {
 	}
 }
 
-type rawHAR struct {
-	Log *struct {
-		Entries *[]rawEntry
-	}
+// countingReader counts bytes so parse can tell whether the limit was hit.
+type countingReader struct {
+	r io.Reader
+	n int64
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += int64(n)
+	return n, err
 }
 
 // Parse reads a HAR document from r.
 func Parse(r io.Reader) ([]Entry, error) { return parse(r, MaxFileSize) }
 
+var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
+
 // parse takes the size limit as a parameter so tests need not stream 256 MiB.
+// It decodes log.entries one element at a time so raw body text is released after conversion.
 func parse(r io.Reader, limit int64) ([]Entry, error) {
-	data, err := io.ReadAll(io.LimitReader(r, limit+1))
-	if err != nil {
-		return nil, fmt.Errorf("read HAR: %w", err)
+	cr := &countingReader{r: io.LimitReader(r, limit+1)}
+	br := bufio.NewReader(cr)
+	if b, _ := br.Peek(len(utf8BOM)); bytes.Equal(b, utf8BOM) {
+		_, _ = br.Discard(len(utf8BOM))
 	}
-	if int64(len(data)) > limit {
+	entries, err := decodeDoc(json.NewDecoder(br))
+	if cr.n > limit {
 		return nil, fmt.Errorf("HAR file exceeds %d MiB", MaxFileSize>>20)
 	}
-	var doc rawHAR
-	if err := json.Unmarshal(data, &doc); err != nil {
+	if err != nil {
 		return nil, fmt.Errorf("parse HAR: %w", err)
 	}
-	if doc.Log == nil || doc.Log.Entries == nil {
-		return nil, errors.New("parse HAR: missing log.entries")
+	return entries, nil
+}
+
+func decodeDoc(dec *json.Decoder) ([]Entry, error) {
+	var entries []Entry
+	found := false
+	err := eachMember(dec, func(key string) error {
+		if key != "log" {
+			return skipValue(dec)
+		}
+		return eachMember(dec, func(key string) error {
+			if key != "entries" {
+				return skipValue(dec)
+			}
+			tok, err := dec.Token()
+			if err != nil {
+				return err
+			}
+			if tok != json.Delim('[') {
+				return errors.New("log.entries is not an array")
+			}
+			found = true
+			entries = []Entry{}
+			for dec.More() {
+				var re rawEntry
+				if err := dec.Decode(&re); err != nil {
+					return err
+				}
+				entries = append(entries, convert(len(entries), re))
+			}
+			_, err = dec.Token() // closing ]
+			return err
+		})
+	})
+	if err != nil {
+		return nil, err
 	}
-	out := make([]Entry, len(*doc.Log.Entries))
-	for i, re := range *doc.Log.Entries {
-		out[i] = convert(i, re)
+	if !found {
+		return nil, errors.New("missing log.entries")
 	}
-	return out, nil
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return nil, errors.New("unexpected data after top-level value")
+	}
+	return entries, nil
+}
+
+// eachMember consumes a JSON object, calling fn after each key; fn must consume the value.
+// A non-object value (including null) is consumed and ignored.
+func eachMember(dec *json.Decoder, fn func(key string) error) error {
+	tok, err := dec.Token()
+	if err != nil {
+		return err
+	}
+	if tok == json.Delim('[') {
+		return skipRest(dec)
+	}
+	if tok != json.Delim('{') {
+		return nil
+	}
+	for dec.More() {
+		k, err := dec.Token()
+		if err != nil {
+			return err
+		}
+		if err := fn(k.(string)); err != nil {
+			return err
+		}
+	}
+	_, err = dec.Token() // closing }
+	return err
+}
+
+// skipValue consumes one JSON value of any shape.
+func skipValue(dec *json.Decoder) error {
+	tok, err := dec.Token()
+	if err != nil {
+		return err
+	}
+	if tok == json.Delim('{') || tok == json.Delim('[') {
+		return skipRest(dec)
+	}
+	return nil
+}
+
+// skipRest consumes tokens up to the delimiter that closes the already-opened container.
+func skipRest(dec *json.Decoder) error {
+	for depth := 1; depth > 0; {
+		tok, err := dec.Token()
+		if err != nil {
+			return err
+		}
+		if d, ok := tok.(json.Delim); ok {
+			if d == '{' || d == '[' {
+				depth++
+			} else {
+				depth--
+			}
+		}
+	}
+	return nil
 }
 
 func convert(i int, re rawEntry) Entry {
@@ -87,7 +192,7 @@ func convert(i int, re rawEntry) Entry {
 	c := rr.Content
 	var body []byte
 	switch {
-	case c.Text == nil && c.Size > 0:
+	case (c.Text == nil || *c.Text == "") && c.Size > 0 && rr.Status != http.StatusNoContent && rr.Status != http.StatusNotModified:
 		e.Skip = "body not recorded"
 		return e
 	case c.Text != nil && c.Encoding == "base64":
@@ -123,6 +228,16 @@ func convert(i int, re rawEntry) Entry {
 	}
 	e.Response = &response.Response{Method: method, Status: rr.Status, Header: h, Body: body}
 	return e
+}
+
+// Subject names the entry for findings as "METHOD scheme://host/path".
+// Userinfo, query and fragment are dropped because they routinely carry credentials.
+func (e Entry) Subject() string {
+	u, err := url.Parse(e.URL)
+	if err != nil {
+		return e.Method + " <invalid URL>"
+	}
+	return e.Method + " " + (&url.URL{Scheme: u.Scheme, Host: u.Host, Path: u.EscapedPath()}).String()
 }
 
 // IsAPI reports whether e looks like an API call: a JSON response, a fetch/XHR request,

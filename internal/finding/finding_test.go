@@ -155,9 +155,9 @@ func TestGroup(t *testing.T) {
 		return Finding{RuleID: "r", Level: Must, Location: "#/a", Line: line, Message: "m", Subject: subject}
 	}
 	in := []Finding{
-		mk("GET https://h/v1/o?page=1", 5),
+		mk("GET https://h/v1/o", 5),
 		{RuleID: "other", Level: Should, Location: "#/a", Message: "m", Subject: "GET https://h/v1/o"},
-		mk("GET https://h/v1/o?page=2#frag", 9),
+		mk("GET https://h/v1/o", 9),
 		mk("POST https://h/v1/o", 0),
 	}
 	got := Group(in)

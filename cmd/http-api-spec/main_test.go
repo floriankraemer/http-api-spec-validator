@@ -530,3 +530,101 @@ func TestCheckHARSummary(t *testing.T) {
 	}
 	t.Log(errs)
 }
+
+const oneAPIEntry = `{"log":{"entries":[{"request":{"method":"GET","url":"%s"},"response":{"status":200,"headers":[{"name":"Content-Type","value":"application/json"}],"content":{"text":"{\"fooBar\":1}"}}}]}}`
+
+func TestCheckHARBOMAndWhitespace(t *testing.T) {
+	har := strings.Replace(oneAPIEntry, "%s", "https://h/v1/a", 1)
+	dir := t.TempDir()
+	bomPath := filepath.Join(dir, "bom.json") // not .har: forces content sniffing
+	if err := os.WriteFile(bomPath, []byte("\xef\xbb\xbf"+har), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for name, run := range map[string]func() (int, string, string){
+		"path":       func() (int, string, string) { return runCmd("check", bomPath) },
+		"stdin":      func() (int, string, string) { return runIn("\xef\xbb\xbf"+har, "check", "-") },
+		"bom+space":  func() (int, string, string) { return runIn("\xef\xbb\xbf \n\t"+har, "check", "-") },
+		"70KB space": func() (int, string, string) { return runIn(strings.Repeat(" ", 70<<10)+har, "check", "-") },
+	} {
+		code, out, errs := run()
+		if code != exitFindings || !strings.Contains(out, "GET https://h/v1/a") || !strings.Contains(errs, "checked 1 of 1") {
+			t.Errorf("%s: code=%d out=%q err=%q", name, code, out, errs)
+		}
+	}
+}
+
+func TestRawResponseNotDetectedAsHAR(t *testing.T) {
+	raw := "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{}"
+	if _, _, errs := runIn(raw, "check", "-"); strings.Contains(errs, "checked ") {
+		t.Errorf("treated as HAR: %q", errs)
+	}
+}
+
+func TestCheckHARSubjectNeverLeaksSecrets(t *testing.T) {
+	har := strings.Replace(oneAPIEntry, "%s", "https://u:pw@h/v1/orders?token=SECRET#frag", 1)
+	for _, extra := range [][]string{{}, {"--no-group"}, {"--format", "json"}, {"--no-group", "--format", "json"}} {
+		_, out, errs := runIn(har, append([]string{"check", "-"}, extra...)...)
+		for _, secret := range []string{"u:pw", "pw@", "SECRET", "token", "frag"} {
+			if strings.Contains(out+errs, secret) {
+				t.Errorf("%v: output leaks %q:\n%s%s", extra, secret, out, errs)
+			}
+		}
+		if !strings.Contains(out, "GET https://h/v1/orders") {
+			t.Errorf("%v: subject missing:\n%s", extra, out)
+		}
+	}
+}
+
+func TestCheckHARNoGroupDistinguishesEntries(t *testing.T) {
+	e := `{"request":{"method":"GET","url":"https://h/v1/a?p=%d"},"response":{"status":200,"headers":[{"name":"Content-Type","value":"application/json"}],"content":{"text":"{\"fooBar\":1}"}}}`
+	har := `{"log":{"entries":[` + strings.Replace(e, "%d", "1", 1) + `,` + strings.Replace(e, "%d", "2", 1) + `]}}`
+	_, out, _ := runIn(har, "check", "-", "--no-group")
+	if !strings.Contains(out, "GET https://h/v1/a (entry #0)") || !strings.Contains(out, "GET https://h/v1/a (entry #1)") {
+		t.Errorf("output:\n%s", out)
+	}
+	_, out, _ = runIn(har, "check", "-")
+	if !strings.Contains(out, "(2 entries)") || strings.Contains(out, "entry #") {
+		t.Errorf("grouped:\n%s", out)
+	}
+}
+
+func TestCheckHARInvalidURLPlaceholder(t *testing.T) {
+	har := strings.Replace(oneAPIEntry, "%s", "http://a b:pw@h/%zz?token=SECRET", 1)
+	_, out, _ := runIn(har, "check", "-")
+	if strings.Contains(out, "SECRET") || strings.Contains(out, "pw") || !strings.Contains(out, "GET <invalid URL>") {
+		t.Errorf("output:\n%s", out)
+	}
+}
+
+func TestCheckHARSummaryNamesEverySkipReason(t *testing.T) {
+	big := strings.Repeat("a", response.MaxBodySize+1)
+	skip := func(content string) string {
+		return `{"request":{"method":"GET","url":"u"},"response":{"status":200,"headers":[],"content":` + content + `}}`
+	}
+	har := `{"log":{"entries":[` + strings.Join([]string{
+		skip(`{"size":1,"text":"` + big + `"}`),
+		skip(`{"text":"!!!","encoding":"base64"}`),
+		skip(`{"text":"!!!","encoding":"base64"}`),
+		skip(`{"size":9}`),
+		`{"request":{"method":"GET","url":"u"}}`,
+		`{"request":{"method":"GET","url":"u"},"response":{"status":200,"headers":[{"name":"Content-Type","value":"application/json"}],"content":{"text":"{}"}}}`,
+	}, ",") + `]}}`
+	_, _, errs := runIn(har, "check", "-")
+	want := "checked 1 of 6 entries; skipped 1 without recorded body, 1 without response, 1 body exceeds 10 MiB, 2 invalid base64 body\n"
+	if errs != want {
+		t.Errorf("stderr = %q\nwant      %q", errs, want)
+	}
+}
+
+// --url-filter / --all cannot help when nothing was skipped as non-API.
+func TestCheckHARNothingRecordedHint(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "x.har")
+	har := `{"log":{"entries":[{"request":{"method":"GET","url":"https://h/v1/a"},"response":{"status":200,"headers":[],"content":{"size":10,"mimeType":"application/json"}}}]}}`
+	if err := os.WriteFile(p, []byte(har), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, _, errs := runCmd("check", p)
+	if code != exitUsage || !strings.Contains(errs, "no entries with a recorded response to check") || strings.Contains(errs, "--url-filter") {
+		t.Fatalf("code %d, stderr %q", code, errs)
+	}
+}

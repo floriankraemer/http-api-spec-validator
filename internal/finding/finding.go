@@ -59,15 +59,7 @@ func Sort(fs []Finding) {
 	})
 }
 
-// stripQuery drops the query string and fragment from the URL part of a subject ("METHOD URL").
-func stripQuery(subject string) string {
-	if i := strings.IndexAny(subject, "?#"); i >= 0 {
-		return subject[:i]
-	}
-	return subject
-}
-
-// Group merges findings that differ only in the query string of their Subject.
+// Group merges findings that are identical apart from Line.
 // The result keeps first-seen order and the first Line; Occurrences counts the merged findings.
 func Group(fs []Finding) []Finding {
 	type key struct {
@@ -77,7 +69,6 @@ func Group(fs []Finding) []Finding {
 	var out []Finding
 	idx := map[key]int{}
 	for _, f := range fs {
-		f.Subject = stripQuery(f.Subject)
 		k := key{f.Subject, f.RuleID, f.Location, f.Message, f.Level}
 		if i, ok := idx[k]; ok {
 			out[i].Occurrences++

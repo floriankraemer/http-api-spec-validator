@@ -45,7 +45,10 @@ func TestParseEntries(t *testing.T) {
 		{"no response", `{"request":{"method":"GET","url":"u"}}`, "no response", 0, "", ""},
 		{"text missing size>0", `{"request":{"method":"GET","url":"u"},"response":{"status":200,"content":{"size":5}}}`, "body not recorded", 0, "", ""},
 		{"text missing size 0", `{"request":{"method":"GET","url":"u"},"response":{"status":204,"content":{"size":0}}}`, "", 204, "", ""},
-		{"text empty string size>0", `{"request":{"method":"GET","url":"u"},"response":{"status":200,"content":{"size":5,"text":""}}}`, "", 200, "", ""},
+		{"text empty string size>0", `{"request":{"method":"GET","url":"u"},"response":{"status":200,"content":{"size":500,"text":""}}}`, "body not recorded", 0, "", ""},
+		{"text empty string size 0", `{"request":{"method":"GET","url":"u"},"response":{"status":200,"content":{"size":0,"text":""}}}`, "", 200, "", ""},
+		{"204 empty text size>0", `{"request":{"method":"DELETE","url":"u"},"response":{"status":204,"content":{"size":500,"text":""}}}`, "", 204, "", ""},
+		{"304 empty text size>0", `{"request":{"method":"GET","url":"u"},"response":{"status":304,"content":{"size":500,"text":""}}}`, "", 304, "", ""},
 		{"invalid base64", `{"request":{"method":"GET","url":"u"},"response":{"status":200,"content":{"text":"!!!","encoding":"base64"}}}`, "invalid base64 body", 0, "", ""},
 		{"oversized", `{"request":{"method":"GET","url":"u"},"response":{"status":200,"content":{"text":"` + strings.Repeat("a", response.MaxBodySize+1) + `"}}}`, "body exceeds 10 MiB", 0, "", ""},
 	}
@@ -168,5 +171,26 @@ func TestParseRejoinsSplitHTTPDates(t *testing.T) {
 	}
 	if got := e.Response.Header.Values("Vary"); len(got) != 2 {
 		t.Errorf("Vary = %q, want two values kept", got)
+	}
+}
+
+func TestParseStripsBOM(t *testing.T) {
+	es, err := Parse(strings.NewReader("\xef\xbb\xbf" + harWith(`{"request":{"method":"GET","url":"u"}}`)))
+	if err != nil || len(es) != 1 {
+		t.Fatalf("%v, %d entries", err, len(es))
+	}
+}
+
+func TestParseSkipsUnknownKeysAndLaterKeys(t *testing.T) {
+	in := `{"x":[1,{"a":"b"}],"log":{"version":"1.2","creator":{"name":"n"},"entries":[{"request":{"method":"GET","url":"a"},"extra":[[1],{}]},{"request":{"method":"GET","url":"b"}}],"pages":[]},"y":null}`
+	es, err := Parse(strings.NewReader(in))
+	if err != nil || len(es) != 2 || es[1].URL != "b" {
+		t.Fatalf("%v %+v", err, es)
+	}
+}
+
+func TestParseTrailingGarbage(t *testing.T) {
+	if _, err := Parse(strings.NewReader(harWith("") + "x")); err == nil {
+		t.Fatal("want error")
 	}
 }

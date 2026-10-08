@@ -3,6 +3,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"flag"
@@ -13,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -270,18 +272,22 @@ type harFlags struct {
 }
 
 // isHAR detects a HAR by a .har extension or a leading '{' (a raw HTTP message never starts with one).
+// It consumes a UTF-8 BOM and leading whitespace from br; neither is meaningful to the parsers that follow.
 func isHAR(path string, br *bufio.Reader) bool {
 	if strings.EqualFold(filepath.Ext(path), ".har") {
 		return true
 	}
-	// Peek grows until a non-space byte shows up or the buffered window ends.
-	for n := 1; ; n *= 2 {
-		b, err := br.Peek(min(n, br.Size()))
-		if t := strings.TrimLeft(string(b), " \t\r\n\ufeff"); t != "" {
-			return t[0] == '{'
-		}
-		if err != nil || n >= br.Size() {
+	if b, _ := br.Peek(3); bytes.Equal(b, []byte("\xef\xbb\xbf")) {
+		_, _ = br.Discard(3)
+	}
+	for {
+		c, err := br.ReadByte()
+		if err != nil {
 			return false
+		}
+		if !strings.ContainsRune(" \t\r\n", rune(c)) {
+			_ = br.UnreadByte()
+			return c == '{'
 		}
 	}
 }
@@ -302,30 +308,35 @@ func checkHAR(in io.Reader, source string, h harFlags, method string, c commonFl
 		return fail(stderr, fmt.Errorf("%s: %w", source, err))
 	}
 	var (
-		all                                        []finding.Finding
-		checked, nonAPI, noBody, noResponse, other int
+		all     []finding.Finding
+		checked int
+		skipped = map[string]int{}
 	)
 	for _, e := range entries {
 		switch {
-		case e.Skip == "no response":
-			noResponse++
-		case e.Skip == "body not recorded":
-			noBody++
 		case e.Skip != "":
-			other++
+			skipped[e.Skip]++
 		case (filter != nil && !filter.MatchString(e.URL)) || (!h.all && !har.IsAPI(e)):
-			nonAPI++
+			skipped["non-API"]++
 		default:
 			checked++
+			subject := e.Subject()
+			if h.noGroup {
+				subject += fmt.Sprintf(" (entry #%d)", e.Index)
+			}
 			for _, f := range response.Check(e.Response) {
-				f.Subject = e.Method + " " + e.URL
+				f.Subject = subject
 				all = append(all, f)
 			}
 		}
 	}
-	fmt.Fprintln(stderr, harSummary(checked, len(entries), nonAPI, noBody, noResponse, other))
+	fmt.Fprintln(stderr, harSummary(checked, len(entries), skipped))
 	if checked == 0 {
-		fmt.Fprintln(stderr, "no API entries matched; use --url-filter or --all")
+		if skipped["non-API"] > 0 {
+			fmt.Fprintln(stderr, "no API entries matched; use --url-filter or --all")
+		} else {
+			fmt.Fprintln(stderr, "no entries with a recorded response to check")
+		}
 		return exitUsage
 	}
 	if !h.noGroup {
@@ -334,15 +345,30 @@ func checkHAR(in io.Reader, source string, h harFlags, method string, c commonFl
 	return report(stdout, stderr, c, source, all)
 }
 
-func harSummary(checked, total, nonAPI, noBody, noResponse, other int) string {
+// harSummaryOrder fixes the order skip reasons appear in; unknown reasons follow alphabetically.
+var harSummaryOrder = []string{"non-API", "body not recorded", "no response"}
+
+// harSummaryWording maps internal skip reasons to the summary phrasing.
+var harSummaryWording = map[string]string{"body not recorded": "without recorded body", "no response": "without response"}
+
+func harSummary(checked, total int, skipped map[string]int) string {
 	s := fmt.Sprintf("checked %d of %d entries", checked, total)
+	reasons := slices.Clone(harSummaryOrder)
+	var rest []string
+	for r := range skipped {
+		if !slices.Contains(harSummaryOrder, r) {
+			rest = append(rest, r)
+		}
+	}
+	slices.Sort(rest)
 	var parts []string
-	for _, p := range []struct {
-		n    int
-		what string
-	}{{nonAPI, "non-API"}, {noBody, "without recorded body"}, {noResponse, "without response"}, {other, "other"}} {
-		if p.n > 0 {
-			parts = append(parts, fmt.Sprintf("%d %s", p.n, p.what))
+	for _, r := range append(reasons, rest...) {
+		if n := skipped[r]; n > 0 {
+			what := r
+			if w, ok := harSummaryWording[r]; ok {
+				what = w
+			}
+			parts = append(parts, fmt.Sprintf("%d %s", n, what))
 		}
 	}
 	if len(parts) > 0 {
