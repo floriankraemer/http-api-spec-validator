@@ -13,6 +13,8 @@ import (
 	"github.com/floriankraemer/http-api-spec/validator/internal/response"
 )
 
+var weekdays = map[string]bool{"Mon": true, "Tue": true, "Wed": true, "Thu": true, "Fri": true, "Sat": true, "Sun": true}
+
 // MaxFileSize bounds a whole HAR document.
 const MaxFileSize = 256 << 20
 
@@ -102,10 +104,19 @@ func convert(i int, re rawEntry) Entry {
 		return e
 	}
 	h := http.Header{}
-	for _, nv := range rr.Headers {
-		if !strings.HasPrefix(nv.Name, ":") {
-			h.Add(nv.Name, nv.Value)
+	hs := rr.Headers
+	for j := 0; j < len(hs); j++ {
+		nv := hs[j]
+		if strings.HasPrefix(nv.Name, ":") {
+			continue
 		}
+		// Some recorders (Playwright WebKit) split values at commas, cutting an
+		// HTTP-date like "Thu, 31 Dec 2026 ..." in two; rejoin it.
+		if weekdays[nv.Value] && j+1 < len(hs) && strings.EqualFold(hs[j+1].Name, nv.Name) {
+			nv.Value += ", " + hs[j+1].Value
+			j++
+		}
+		h.Add(nv.Name, nv.Value)
 	}
 	if h.Get("Content-Type") == "" && c.MimeType != "" {
 		h.Set("Content-Type", c.MimeType)
@@ -114,8 +125,10 @@ func convert(i int, re rawEntry) Entry {
 	return e
 }
 
-// IsAPI reports whether e looks like an API call: a JSON response or a fetch/XHR request.
+// IsAPI reports whether e looks like an API call: a JSON response, a fetch/XHR request,
+// or a PUT/PATCH/DELETE (browsers never use these for page assets).
 func IsAPI(e Entry) bool {
 	return e.Response != nil &&
-		(response.IsJSONMediaType(e.Response.Header) || e.ResourceType == "fetch" || e.ResourceType == "xhr")
+		(response.IsJSONMediaType(e.Response.Header) || e.ResourceType == "fetch" || e.ResourceType == "xhr" ||
+			e.Method == http.MethodPut || e.Method == http.MethodPatch || e.Method == http.MethodDelete)
 }

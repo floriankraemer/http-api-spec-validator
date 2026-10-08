@@ -104,6 +104,12 @@ func TestIsAPI(t *testing.T) {
 		{"html fetch", Entry{Response: h("text/html"), ResourceType: "fetch"}, true},
 		{"html xhr", Entry{Response: h("text/html"), ResourceType: "xhr"}, true},
 		{"image", Entry{Response: h("image/png"), ResourceType: "image"}, false},
+		{"delete no type", Entry{Method: "DELETE", Response: h("")}, true},
+		{"put", Entry{Method: "PUT", Response: h("text/plain")}, true},
+		{"patch", Entry{Method: "PATCH", Response: h("text/plain")}, true},
+		{"post html", Entry{Method: "POST", Response: h("text/html")}, false},
+		{"post json", Entry{Method: "POST", Response: h("application/json")}, true},
+		{"delete skipped", Entry{Method: "DELETE", Skip: "no response"}, false},
 		{"skipped", Entry{Skip: "no response", ResourceType: "fetch"}, false},
 	}
 	for _, tc := range tests {
@@ -146,5 +152,21 @@ func TestGoodEntryHasNoFindings(t *testing.T) {
 	e := parseOne(t, `{"request":{"method":"GET","url":"u"},"response":{"status":200,"headers":[{"name":"content-type","value":"application/json"}],"content":{"text":"{\"data\":{\"id\":\"abc\"}}"}}}`)
 	if f := response.Check(e.Response); len(f) != 0 {
 		t.Fatalf("findings: %v", f)
+	}
+}
+
+// Playwright's WebKit recorder splits header values at commas, so an HTTP-date
+// arrives as "Thu" plus "31 Dec 2026 23:59:59 GMT".
+func TestParseRejoinsSplitHTTPDates(t *testing.T) {
+	e := parseOne(t, `{"request":{"method":"GET","url":"https://x/v1/a"},
+	  "response":{"status":200,"headers":[
+	    {"name":"Sunset","value":"Thu"},{"name":"Sunset","value":"31 Dec 2026 23:59:59 GMT"},
+	    {"name":"Vary","value":"Accept"},{"name":"Vary","value":"Origin"}],
+	    "content":{"size":0,"mimeType":"application/json"}}}`)
+	if got := e.Response.Header.Values("Sunset"); len(got) != 1 || got[0] != "Thu, 31 Dec 2026 23:59:59 GMT" {
+		t.Errorf("Sunset = %q", got)
+	}
+	if got := e.Response.Header.Values("Vary"); len(got) != 2 {
+		t.Errorf("Vary = %q, want two values kept", got)
 	}
 }

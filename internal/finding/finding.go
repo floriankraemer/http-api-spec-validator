@@ -28,6 +28,10 @@ type Finding struct {
 	// Line is the 1-based source line, 0 if unknown.
 	Line    int    `json:"line,omitempty"`
 	Message string `json:"message"`
+	// Subject names what was checked, e.g. "GET https://host/v1/orders"; empty for single-document runs.
+	Subject string `json:"subject,omitempty"`
+	// Occurrences is how many identical findings were merged by Group; 0 when ungrouped.
+	Occurrences int `json:"occurrences,omitempty"`
 }
 
 var pointerEscaper = strings.NewReplacer("~", "~0", "/", "~1")
@@ -43,15 +47,47 @@ func Pointer(base string, tokens ...string) string {
 	return b.String()
 }
 
-// Sort orders findings by Line, Location, RuleID; ties keep their input order.
+// Sort orders findings by Line, Subject, Location, RuleID; ties keep their input order.
 func Sort(fs []Finding) {
 	slices.SortStableFunc(fs, func(a, b Finding) int {
 		return cmp.Or(
 			cmp.Compare(a.Line, b.Line),
+			cmp.Compare(a.Subject, b.Subject),
 			cmp.Compare(a.Location, b.Location),
 			cmp.Compare(a.RuleID, b.RuleID),
 		)
 	})
+}
+
+// stripQuery drops the query string and fragment from the URL part of a subject ("METHOD URL").
+func stripQuery(subject string) string {
+	if i := strings.IndexAny(subject, "?#"); i >= 0 {
+		return subject[:i]
+	}
+	return subject
+}
+
+// Group merges findings that differ only in the query string of their Subject.
+// The result keeps first-seen order and the first Line; Occurrences counts the merged findings.
+func Group(fs []Finding) []Finding {
+	type key struct {
+		subject, ruleID, location, message string
+		level                              Level
+	}
+	var out []Finding
+	idx := map[key]int{}
+	for _, f := range fs {
+		f.Subject = stripQuery(f.Subject)
+		k := key{f.Subject, f.RuleID, f.Location, f.Message, f.Level}
+		if i, ok := idx[k]; ok {
+			out[i].Occurrences++
+			continue
+		}
+		f.Occurrences = 1
+		idx[k] = len(out)
+		out = append(out, f)
+	}
+	return out
 }
 
 // Failed reports whether the findings should fail a run: any MUST, or any finding when strict.
@@ -75,7 +111,15 @@ func WriteText(w io.Writer, source string, fs []Finding) error {
 		if f.Line != 0 {
 			fmt.Fprintf(&b, ":%d", f.Line)
 		}
-		fmt.Fprintf(&b, ": %s %s %s: %s\n", f.Level, f.RuleID, f.Location, f.Message)
+		fmt.Fprintf(&b, ": %s %s ", f.Level, f.RuleID)
+		if f.Subject != "" {
+			b.WriteString(f.Subject + " ")
+		}
+		fmt.Fprintf(&b, "%s: %s", f.Location, f.Message)
+		if f.Occurrences > 1 {
+			fmt.Fprintf(&b, " (%d entries)", f.Occurrences)
+		}
+		b.WriteByte('\n')
 		switch f.Level {
 		case Must:
 			musts++

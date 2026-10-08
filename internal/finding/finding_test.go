@@ -149,3 +149,49 @@ func TestWriteJSON(t *testing.T) {
 		})
 	}
 }
+
+func TestGroup(t *testing.T) {
+	mk := func(subject string, line int) Finding {
+		return Finding{RuleID: "r", Level: Must, Location: "#/a", Line: line, Message: "m", Subject: subject}
+	}
+	in := []Finding{
+		mk("GET https://h/v1/o?page=1", 5),
+		{RuleID: "other", Level: Should, Location: "#/a", Message: "m", Subject: "GET https://h/v1/o"},
+		mk("GET https://h/v1/o?page=2#frag", 9),
+		mk("POST https://h/v1/o", 0),
+	}
+	got := Group(in)
+	want := []Finding{
+		{RuleID: "r", Level: Must, Location: "#/a", Line: 5, Message: "m", Subject: "GET https://h/v1/o", Occurrences: 2},
+		{RuleID: "other", Level: Should, Location: "#/a", Message: "m", Subject: "GET https://h/v1/o", Occurrences: 1},
+		{RuleID: "r", Level: Must, Location: "#/a", Message: "m", Subject: "POST https://h/v1/o", Occurrences: 1},
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("got %+v\nwant %+v", got, want)
+	}
+}
+
+func TestSortSubjectBetweenLineAndLocation(t *testing.T) {
+	fs := []Finding{{Subject: "b", Location: "#/a"}, {Subject: "a", Location: "#/z"}, {Subject: "a", Location: "#/b", Line: 1}}
+	Sort(fs)
+	if fs[0].Line != 0 || fs[0].Subject != "a" || fs[1].Subject != "b" || fs[2].Line != 1 {
+		t.Errorf("order: %+v", fs)
+	}
+}
+
+func TestWriteTextSubject(t *testing.T) {
+	var b bytes.Buffer
+	fs := []Finding{
+		{RuleID: "r", Level: Must, Location: "#/a", Message: "m", Subject: "GET https://h/x", Occurrences: 3},
+		{RuleID: "r", Level: Should, Location: "#/b", Message: "n", Subject: "GET https://h/y", Occurrences: 1},
+	}
+	if err := WriteText(&b, "f.har", fs); err != nil {
+		t.Fatal(err)
+	}
+	want := "f.har: MUST r GET https://h/x #/a: m (3 entries)\n" +
+		"f.har: SHOULD r GET https://h/y #/b: n\n" +
+		"2 finding(s): 1 MUST, 1 SHOULD\n"
+	if b.String() != want {
+		t.Errorf("got %q\nwant %q", b.String(), want)
+	}
+}

@@ -399,3 +399,134 @@ func TestCheckURLRedirects(t *testing.T) {
 		t.Errorf("same-host: code=%d final=%v out=%q err=%q", code, final, out, errs)
 	}
 }
+
+const harDir = "../../testdata/har"
+
+func harFixtures(t *testing.T) []string {
+	t.Helper()
+	return fixtures(t, harDir)
+}
+
+func TestCheckHARFixtures(t *testing.T) {
+	for _, p := range harFixtures(t) {
+		base := filepath.Base(p)
+		if !strings.HasSuffix(base, ".har") || base == "empty-no-api.har" {
+			continue
+		}
+		t.Run(base, func(t *testing.T) {
+			code, out, _ := runCmd("check", p, "--format", "json")
+			j := parseJSON(t, out)
+			hasMust := false
+			for _, f := range j.Findings {
+				hasMust = hasMust || f.Level == "MUST"
+			}
+			switch {
+			case strings.HasPrefix(base, "good-"):
+				if code != exitOK || len(j.Findings) != 0 {
+					t.Errorf("code=%d findings=%+v", code, j.Findings)
+				}
+				if _, text, _ := runCmd("check", p); !strings.Contains(text, "no findings") {
+					t.Errorf("text: %s", text)
+				}
+			case strings.HasPrefix(base, "bad-"):
+				rest := strings.TrimPrefix(base, "bad-")
+				if len(j.Findings) == 0 {
+					t.Fatal("no findings")
+				}
+				for _, f := range j.Findings {
+					if !strings.HasPrefix(rest, f.RuleID+"-") {
+						t.Errorf("unexpected rule %q in %s", f.RuleID, base)
+					}
+				}
+				want := exitOK
+				if hasMust {
+					want = exitFindings
+				}
+				if code != want {
+					t.Errorf("exit = %d, want %d", code, want)
+				}
+				if c, _, _ := runCmd("check", p, "--strict"); c != exitFindings {
+					t.Errorf("--strict exit = %d, want 1", c)
+				}
+			default:
+				t.Fatalf("fixture %s has no good-/bad- prefix", base)
+			}
+		})
+	}
+}
+
+func TestCheckHAREmptyNoAPI(t *testing.T) {
+	code, _, errs := runCmd("check", filepath.Join(harDir, "empty-no-api.har"))
+	if code != exitUsage || !strings.Contains(errs, "no API entries matched; use --url-filter or --all") {
+		t.Errorf("code=%d stderr=%q", code, errs)
+	}
+}
+
+func TestCheckHARGrouping(t *testing.T) {
+	p := filepath.Join(harDir, "bad-naming-camel-case-chromium.har")
+	_, out, _ := runCmd("check", p)
+	if !strings.Contains(out, "(3 entries)") || strings.Contains(out, "?") {
+		t.Errorf("grouped output:\n%s", out)
+	}
+	_, ungrouped, _ := runCmd("check", p, "--no-group")
+	if strings.Contains(ungrouped, "entries)") {
+		t.Errorf("--no-group output has counts:\n%s", ungrouped)
+	}
+	if n, g := strings.Count(ungrouped, "camel"), strings.Count(out, "camel"); n < g+2 {
+		t.Errorf("ungrouped mentions %d, grouped %d", n, g)
+	}
+	_, js, _ := runCmd("check", p, "--format", "json")
+	if !strings.Contains(js, `"subject"`) || !strings.Contains(js, `"occurrences": 3`) {
+		t.Errorf("json:\n%s", js)
+	}
+}
+
+func TestCheckHARURLFilter(t *testing.T) {
+	bad := filepath.Join(harDir, "bad-naming-camel-case-chromium.har")
+	if code, _, errs := runCmd("check", bad, "--url-filter", "^$"); code != exitUsage || !strings.Contains(errs, "no API entries matched") {
+		t.Errorf("no match: code=%d err=%q", code, errs)
+	}
+	if code, _, errs := runCmd("check", bad, "--url-filter", "("); code != exitUsage || errs == "" {
+		t.Errorf("invalid regex: code=%d err=%q", code, errs)
+	}
+	if code, _, _ := runCmd("check", bad, "--url-filter", "."); code != exitFindings {
+		t.Errorf("match all: code=%d", code)
+	}
+}
+
+func TestCheckHARStdin(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join(harDir, "good-chromium.har"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, out, errs := runIn("  \n"+string(data), "check", "-")
+	if code != exitOK || !strings.HasPrefix(out, "<stdin>: no findings") || !strings.Contains(errs, "checked ") {
+		t.Errorf("code=%d out=%q err=%q", code, out, errs)
+	}
+}
+
+func TestCheckHARAll(t *testing.T) {
+	p := filepath.Join(harDir, "good-chromium.har")
+	code, out, _ := runCmd("check", p, "--all", "--format", "json")
+	if code != exitFindings || len(parseJSON(t, out).Findings) == 0 {
+		t.Errorf("--all: code=%d out=%s", code, out)
+	}
+}
+
+func TestCheckHARRejectsURLAndMethod(t *testing.T) {
+	p := filepath.Join(harDir, "good-chromium.har")
+	for _, extra := range [][]string{{"--url", "http://x"}, {"--method", "GET"}} {
+		if code, _, errs := runCmd(append([]string{"check", p}, extra...)...); code != exitUsage || errs == "" {
+			t.Errorf("%v: code=%d err=%q", extra, code, errs)
+		}
+	}
+}
+
+func TestCheckHARSummary(t *testing.T) {
+	_, _, errs := runCmd("check", filepath.Join(harDir, "good-chrome-devtools.har"))
+	if !strings.HasPrefix(errs, "checked ") || !strings.Contains(errs, " of ") ||
+		!strings.Contains(errs, "without recorded body") || !strings.Contains(errs, "without response") {
+		t.Errorf("stderr: %q", errs)
+	}
+	t.Log(errs)
+}

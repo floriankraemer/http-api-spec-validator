@@ -2,6 +2,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"flag"
@@ -10,10 +11,13 @@ import (
 	"net/http"
 	"net/textproto"
 	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/floriankraemer/http-api-spec/validator/internal/finding"
+	"github.com/floriankraemer/http-api-spec/validator/internal/har"
 	"github.com/floriankraemer/http-api-spec/validator/internal/openapi"
 	"github.com/floriankraemer/http-api-spec/validator/internal/response"
 )
@@ -30,9 +34,14 @@ var version = "dev"
 const usage = `Usage:
   http-api-spec lint <openapi-file> [--format text|json] [--strict]
   http-api-spec check <response-file|-> [--method M] [--format text|json] [--strict]
+  http-api-spec check <recording.har|-> [--url-filter REGEX] [--all] [--no-group] [--format text|json] [--strict]
   http-api-spec check --url URL [--method GET] [--header "K: V"]... [--timeout 30s] [--format text|json] [--strict]
   http-api-spec version
   http-api-spec help
+
+A HAR 1.2 recording (.har file, or input starting with '{') checks every API entry;
+--url-filter narrows entries by URL, --all also checks non-API entries,
+--no-group lists repeated findings per entry (with full URLs) instead of merging them.
 
 Exit codes: 0 ok, 1 findings failed, 2 usage or I/O error.
 `
@@ -204,15 +213,22 @@ func runCheck(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		method  string
 		timeout time.Duration
 		headers = headerFlag{}
+		h       harFlags
 	)
 	fs := newFlagSet("check", stderr, &c)
 	fs.StringVar(&url, "url", "", "fetch the response live from this URL")
 	fs.StringVar(&method, "method", "", "request method (default GET with --url, unknown for files)")
 	fs.DurationVar(&timeout, "timeout", 30*time.Second, "request timeout with --url")
 	fs.Var(headers, "header", `request header "Name: value" with --url (repeatable)`)
+	fs.StringVar(&h.urlFilter, "url-filter", "", "HAR: only check entries whose URL matches this regular expression")
+	fs.BoolVar(&h.all, "all", false, "HAR: check every entry, not only API entries")
+	fs.BoolVar(&h.noGroup, "no-group", false, "HAR: do not merge identical findings of repeated requests")
 	pos, code, ok := parseArgs(fs, args, &c, stderr)
 	if !ok {
 		return code
+	}
+	if url != "" && len(pos) == 1 && strings.EqualFold(filepath.Ext(pos[0]), ".har") {
+		return fail(stderr, errors.New("check: --url cannot be combined with a HAR file"))
 	}
 	if (url == "") == (len(pos) == 0) || len(pos) > 1 {
 		return fail(stderr, errors.New("check: want exactly one of <response-file|-> or --url"))
@@ -234,11 +250,103 @@ func runCheck(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		var in io.ReadCloser
 		if in, source, err = openInput(pos[0], stdin); err == nil {
 			defer in.Close()
-			resp, err = response.Parse(in, method)
+			br := bufio.NewReader(in)
+			if isHAR(pos[0], br) {
+				return checkHAR(br, source, h, method, c, stdout, stderr)
+			}
+			resp, err = response.Parse(br, method)
 		}
 	}
 	if err != nil {
 		return fail(stderr, err)
 	}
 	return report(stdout, stderr, c, source, response.Check(resp))
+}
+
+type harFlags struct {
+	urlFilter string
+	all       bool
+	noGroup   bool
+}
+
+// isHAR detects a HAR by a .har extension or a leading '{' (a raw HTTP message never starts with one).
+func isHAR(path string, br *bufio.Reader) bool {
+	if strings.EqualFold(filepath.Ext(path), ".har") {
+		return true
+	}
+	// Peek grows until a non-space byte shows up or the buffered window ends.
+	for n := 1; ; n *= 2 {
+		b, err := br.Peek(min(n, br.Size()))
+		if t := strings.TrimLeft(string(b), " \t\r\n\ufeff"); t != "" {
+			return t[0] == '{'
+		}
+		if err != nil || n >= br.Size() {
+			return false
+		}
+	}
+}
+
+func checkHAR(in io.Reader, source string, h harFlags, method string, c commonFlags, stdout, stderr io.Writer) int {
+	if method != "" {
+		return fail(stderr, errors.New("check: --method cannot be combined with a HAR file; the method comes from each HAR entry"))
+	}
+	var filter *regexp.Regexp
+	if h.urlFilter != "" {
+		var err error
+		if filter, err = regexp.Compile(h.urlFilter); err != nil {
+			return fail(stderr, fmt.Errorf("check: invalid --url-filter: %w", err))
+		}
+	}
+	entries, err := har.Parse(in)
+	if err != nil {
+		return fail(stderr, fmt.Errorf("%s: %w", source, err))
+	}
+	var (
+		all                                        []finding.Finding
+		checked, nonAPI, noBody, noResponse, other int
+	)
+	for _, e := range entries {
+		switch {
+		case e.Skip == "no response":
+			noResponse++
+		case e.Skip == "body not recorded":
+			noBody++
+		case e.Skip != "":
+			other++
+		case (filter != nil && !filter.MatchString(e.URL)) || (!h.all && !har.IsAPI(e)):
+			nonAPI++
+		default:
+			checked++
+			for _, f := range response.Check(e.Response) {
+				f.Subject = e.Method + " " + e.URL
+				all = append(all, f)
+			}
+		}
+	}
+	fmt.Fprintln(stderr, harSummary(checked, len(entries), nonAPI, noBody, noResponse, other))
+	if checked == 0 {
+		fmt.Fprintln(stderr, "no API entries matched; use --url-filter or --all")
+		return exitUsage
+	}
+	if !h.noGroup {
+		all = finding.Group(all)
+	}
+	return report(stdout, stderr, c, source, all)
+}
+
+func harSummary(checked, total, nonAPI, noBody, noResponse, other int) string {
+	s := fmt.Sprintf("checked %d of %d entries", checked, total)
+	var parts []string
+	for _, p := range []struct {
+		n    int
+		what string
+	}{{nonAPI, "non-API"}, {noBody, "without recorded body"}, {noResponse, "without response"}, {other, "other"}} {
+		if p.n > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", p.n, p.what))
+		}
+	}
+	if len(parts) > 0 {
+		s += "; skipped " + strings.Join(parts, ", ")
+	}
+	return s
 }
