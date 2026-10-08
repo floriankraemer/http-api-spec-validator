@@ -249,3 +249,9 @@ func numericIDs(v any, ptr string) []finding.Finding {
 	}
 	return out
 }
+
+// IsJSONMediaType reports whether h's Content-Type is application/json or any "+json" type.
+func IsJSONMediaType(h http.Header) bool {
+	mt, _, err := mime.ParseMediaType(h.Get("Content-Type"))
+	return err == nil && (mt == "application/json" || strings.HasSuffix(mt, "+json"))
+}
