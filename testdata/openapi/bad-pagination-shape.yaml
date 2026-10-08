@@ -1,0 +1,61 @@
+openapi: 3.1.0
+info:
+  title: Orders API
+  version: 1.0.0
+security:
+  - bearerAuth: []
+paths:
+  /v1/orders:
+    get:
+      tags:
+        - idempotent
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: A page of orders.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderCollectionResponse'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    OrderCollectionResponse:
+      type: object
+      required:
+        - data
+        - pagination
+      properties:
+        data:
+          type: object
+          properties:
+            orders:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+        pagination:
+          type: object
+          required:
+            - currentPage
+            - totalPages
+            - perPage
+          properties:
+            currentPage:
+              type: integer
+            totalPages:
+              type: integer
+            perPage:
+              type: integer

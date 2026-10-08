@@ -1,0 +1,14 @@
+HTTP/1.1 200 OK
+Content-Type: application/json
+Deprecation: @1767225600
+Sunset: Thu, 31 Dec 2026 23:59:59 GMT
+Link: <https://api.example.com/deprecations/v1>; rel="deprecation"; type="text/html"
+
+{
+  "data": {
+    "user": {
+      "id": "123",
+      "username": "Foo"
+    }
+  }
+}

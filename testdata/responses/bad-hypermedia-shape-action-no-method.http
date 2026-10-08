@@ -1,0 +1,14 @@
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "data": {
+    "order": {
+      "id": "123",
+      "status": "pending"
+    }
+  },
+  "_actions": {
+    "pay": { "href": "/orders/123/pay", "title": "Pay order" }
+  }
+}

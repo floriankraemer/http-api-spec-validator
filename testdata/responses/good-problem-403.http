@@ -1,0 +1,17 @@
+HTTP/1.1 403 Forbidden
+Content-Type: application/problem+json
+
+{
+  "type": "https://api.example.com/errors/activation-process/AP-E0012",
+  "status": 403,
+  "title": "Activation process failed.",
+  "detail": "An error occurred in the ProcessActivation component; the process can't be activated without granting the `activate` permission to the logged-in user.",
+  "instance": "/processes/5190fca3-9975-4f74-9285-96bec302728c",
+  "code": "AP-E0012",
+  "permission": "activate",
+  "user": "0b6c1c1e-4a7e-4d8a-9a43-1d1f0a6f3b21",
+  "process": "5190fca3-9975-4f74-9285-96bec302728c",
+  "affectedComponent": "ProcessActivation",
+  "correlationId": "2173be5a-e421-4e3d-86ba-325c8007e22a",
+  "occurredAt": "2009-11-04T19:55:41Z"
+}

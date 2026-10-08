@@ -1,0 +1,47 @@
+openapi: 3.1.0
+info:
+  title: Orders API
+  version: 1.0.0
+security:
+  - bearerAuth: []
+paths:
+  /v1/orders/batch:
+    post:
+      operationId: createOrdersBatch
+      requestBody:
+        required: true
+        content:
+          multipart/mixed:
+            schema:
+              type: object
+              properties:
+                order:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: The created order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    OrderResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: object
+          properties:
+            order:
+              type: object
+              properties:
+                id:
+                  type: string

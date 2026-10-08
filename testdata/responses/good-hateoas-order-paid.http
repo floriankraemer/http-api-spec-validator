@@ -1,0 +1,17 @@
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "data": {
+    "order": {
+      "id": "123",
+      "status": "paid",
+      "total": 49.90
+    }
+  },
+  "_links": {
+    "self": { "href": "/orders/123" },
+    "customer": { "href": "/customers/42", "title": "ACME Corp." },
+    "invoice": { "href": "/orders/123/invoice", "title": "Invoice" }
+  }
+}

@@ -1,0 +1,13 @@
+.git
+.github
+.gitignore
+.golangci.yml
+dist/
+bin/
+/http-api-spec
+*.test
+*.out
+*.md
+Dockerfile
+.dockerignore
+compose.yaml

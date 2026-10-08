@@ -1,0 +1,59 @@
+# All services are run-style: use `docker compose run --rm <service> ...`, not `up`.
+x-go-env: &go-env
+  user: "${UID:-1000}:${GID:-1000}"
+  working_dir: /src
+  environment:
+    HOME: /cache/home
+    GOCACHE: /cache/build
+    GOMODCACHE: /cache/mod
+    XDG_CACHE_HOME: /cache/xdg
+    GOFLAGS: -buildvcs=false
+    CGO_ENABLED: "1" # needed for -race
+  volumes:
+    - .:/src
+    - gomod:/cache/mod
+    - gocache:/cache/build
+    - home:/cache/home
+    - xdg:/cache/xdg
+  depends_on:
+    cache-init:
+      condition: service_completed_successfully
+
+services:
+  # Named volumes are created root-owned; fix ownership once for the host UID.
+  cache-init:
+    image: golang:1.26.8
+    user: "0:0"
+    command: chown -R ${UID:-1000}:${GID:-1000} /cache
+    volumes:
+      - gomod:/cache/mod
+      - gocache:/cache/build
+      - home:/cache/home
+      - xdg:/cache/xdg
+
+  dev:
+    <<: *go-env
+    image: golang:1.26.8
+    command: go test -race ./...
+
+  lint:
+    <<: *go-env
+    image: golangci/golangci-lint:v2.14.0
+    command: golangci-lint run ./...
+
+  # docker compose run --rm validator lint /work/x.yaml
+  validator:
+    build:
+      context: .
+      args:
+        VERSION: dev
+    image: http-api-spec:dev
+    user: "${UID:-1000}:${GID:-1000}"
+    volumes:
+      - .:/work:ro
+
+volumes:
+  gomod:
+  gocache:
+  home:
+  xdg:

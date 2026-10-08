@@ -1,0 +1,34 @@
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "data": {
+    "order": {
+      "id": "123",
+      "status": "pending",
+      "total": 49.90
+    }
+  },
+  "_links": {
+    "self": { "href": "/orders/123" },
+    "customer": { "href": "/customers/42", "title": "ACME Corp." }
+  },
+  "_actions": {
+    "pay": {
+      "href": "/orders/123/pay",
+      "method": "POST",
+      "title": "Pay order",
+      "fields": [
+        { "name": "paymentMethod", "type": "string", "required": true, "title": "Payment method" }
+      ]
+    },
+    "cancel": {
+      "href": "/orders/123/cancel",
+      "method": "POST",
+      "title": "Cancel order",
+      "fields": [
+        { "name": "reason", "type": "string", "title": "Reason" }
+      ]
+    }
+  }
+}

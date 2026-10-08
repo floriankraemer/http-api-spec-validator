@@ -1,0 +1,404 @@
+openapi: 3.1.0
+info:
+  title: Orders API
+  version: 1.0.0
+security:
+  - bearerAuth: []
+tags:
+  - name: idempotent
+    description: Operation can be safely retried.
+paths:
+  /v1/orders:
+    get:
+      tags:
+        - idempotent
+      operationId: listOrders
+      summary: List orders
+      parameters:
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/perPage'
+      responses:
+        '200':
+          description: A page of orders.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderCollectionResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      operationId: createOrder
+      summary: Create an order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrderRequest'
+      responses:
+        '201':
+          description: Order created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/orders/{orderId}:
+    parameters:
+      - $ref: '#/components/parameters/orderId'
+    get:
+      tags:
+        - idempotent
+      operationId: getOrder
+      summary: Get an order
+      responses:
+        '200':
+          description: The order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    put:
+      tags:
+        - idempotent
+      operationId: replaceOrder
+      summary: Replace an order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateOrderRequest'
+      responses:
+        '200':
+          description: The replaced order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      tags:
+        - idempotent
+      operationId: deleteOrder
+      summary: Delete an order
+      responses:
+        '204':
+          description: The order was deleted.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/orders/{orderId}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/orderId'
+    post:
+      operationId: cancelOrder
+      summary: Cancel an order
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelOrderRequest'
+      responses:
+        '200':
+          description: The cancelled order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    orderId:
+      name: orderId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    page:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    perPage:
+      name: perPage
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+  responses:
+    ValidationError:
+      description: The request is not valid.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    NotFound:
+      description: The order does not exist.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Conflict:
+      description: The order is in a state that does not allow the operation.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    InternalError:
+      description: An unexpected error occurred.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+  schemas:
+    Problem:
+      type: object
+      required:
+        - type
+        - title
+        - status
+      properties:
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+        code:
+          type: string
+    Link:
+      type: object
+      required:
+        - href
+      properties:
+        href:
+          type: string
+        title:
+          type: string
+      additionalProperties: false
+    Links:
+      type: object
+      minProperties: 1
+      additionalProperties:
+        oneOf:
+          - $ref: '#/components/schemas/Link'
+          - type: array
+            items:
+              $ref: '#/components/schemas/Link'
+    Field:
+      type: object
+      required:
+        - name
+        - type
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum:
+            - string
+            - number
+            - integer
+            - boolean
+            - object
+            - array
+        required:
+          type: boolean
+        title:
+          type: string
+      additionalProperties: false
+    Action:
+      type: object
+      required:
+        - href
+        - method
+      properties:
+        href:
+          type: string
+        method:
+          type: string
+          enum:
+            - POST
+            - PUT
+            - PATCH
+            - DELETE
+        title:
+          type: string
+        fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/Field'
+      additionalProperties: false
+    Actions:
+      type: object
+      minProperties: 1
+      additionalProperties:
+        $ref: '#/components/schemas/Action'
+    Pagination:
+      type: object
+      required:
+        - currentPage
+        - totalPages
+        - perPage
+        - totalItems
+      properties:
+        currentPage:
+          type: integer
+        totalPages:
+          type: integer
+        perPage:
+          type: integer
+        totalItems:
+          type: integer
+        previousPage:
+          type:
+            - integer
+            - 'null'
+        nextPage:
+          type:
+            - integer
+            - 'null'
+    Order:
+      type: object
+      required:
+        - id
+        - status
+        - total
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum:
+            - pending
+            - paid
+            - cancelled
+        total:
+          type: number
+        customerId:
+          type: string
+        _links:
+          $ref: '#/components/schemas/Links'
+        _actions:
+          $ref: '#/components/schemas/Actions'
+    OrderResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: object
+          required:
+            - order
+          properties:
+            order:
+              $ref: '#/components/schemas/Order'
+        _links:
+          $ref: '#/components/schemas/Links'
+        _actions:
+          $ref: '#/components/schemas/Actions'
+    OrderCollectionResponse:
+      type: object
+      required:
+        - data
+        - pagination
+      properties:
+        data:
+          type: object
+          required:
+            - orders
+          properties:
+            orders:
+              type: array
+              items:
+                $ref: '#/components/schemas/Order'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+        _links:
+          $ref: '#/components/schemas/Links'
+        _actions:
+          $ref: '#/components/schemas/Actions'
+    CreateOrderRequest:
+      type: object
+      required:
+        - customerId
+        - items
+      properties:
+        customerId:
+          type: string
+        items:
+          type: array
+          items:
+            type: object
+            required:
+              - productId
+              - quantity
+            properties:
+              productId:
+                type: string
+              quantity:
+                type: integer
+                minimum: 1
+    UpdateOrderRequest:
+      type: object
+      required:
+        - customerId
+        - items
+      properties:
+        customerId:
+          type: string
+        items:
+          type: array
+          items:
+            type: object
+            required:
+              - productId
+              - quantity
+            properties:
+              productId:
+                type: string
+              quantity:
+                type: integer
+                minimum: 1
+    CancelOrderRequest:
+      type: object
+      properties:
+        reason:
+          type: string

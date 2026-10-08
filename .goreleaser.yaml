@@ -1,0 +1,48 @@
+version: 2
+
+git:
+  ignore_tags:
+    - latest
+
+builds:
+  - id: http-api-spec
+    main: ./cmd/http-api-spec
+    binary: http-api-spec
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+archives:
+  - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    # Snapshot (rolling "latest") archives get a stable name so download URLs never change.
+    name_template: "http-api-spec_{{ if .IsSnapshot }}latest{{ else }}{{ .Version }}{{ end }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - src: ../README.md
+        strip_parent: true
+      - src: README.md
+        dst: VALIDATOR.md
+      - src: ../specification/specification.md
+        strip_parent: true
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "0.0.0-latest+{{.ShortCommit}}"
+
+release:
+  prerelease: auto
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^(docs|test|chore|ci)(\(.+\))?!?:'

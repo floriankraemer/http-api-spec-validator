@@ -1,0 +1,51 @@
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "data": {
+    "orders": [
+      {
+        "id": "123",
+        "status": "pending",
+        "_links": {
+          "self": { "href": "/orders/123" }
+        },
+        "_actions": {
+          "cancel": { "href": "/orders/123/cancel", "method": "POST", "title": "Cancel order" }
+        }
+      },
+      {
+        "id": "124",
+        "status": "paid",
+        "_links": {
+          "self": { "href": "/orders/124" }
+        }
+      }
+    ]
+  },
+  "pagination": {
+    "currentPage": 2,
+    "totalPages": 5,
+    "perPage": 2,
+    "totalItems": 10,
+    "previousPage": 1,
+    "nextPage": 3
+  },
+  "_links": {
+    "self": { "href": "/orders?page=2" },
+    "first": { "href": "/orders?page=1" },
+    "prev": { "href": "/orders?page=1" },
+    "next": { "href": "/orders?page=3" },
+    "last": { "href": "/orders?page=5" }
+  },
+  "_actions": {
+    "create": {
+      "href": "/orders",
+      "method": "POST",
+      "title": "Create order",
+      "fields": [
+        { "name": "customerId", "type": "string", "required": true, "title": "Customer" }
+      ]
+    }
+  }
+}

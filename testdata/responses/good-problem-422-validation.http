@@ -1,0 +1,13 @@
+HTTP/1.1 422 Unprocessable Content
+Content-Type: application/problem+json
+Content-Language: en
+
+{
+  "type": "https://api.example.com/errors/validation-error",
+  "title": "Your request is not valid.",
+  "status": 422,
+  "errors": [
+    { "detail": "must be a positive integer", "pointer": "#/age" },
+    { "detail": "must be 'green', 'red' or 'blue'", "pointer": "#/profile/color" }
+  ]
+}
