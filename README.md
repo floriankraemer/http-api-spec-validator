@@ -3,8 +3,8 @@
 `http-api-spec` is a command line validator that checks OpenAPI documents and HTTP responses against the [HTTP API Design Standard](../specification/specification.md).
 `http-api-spec` has two commands.
 `lint` checks an OpenAPI 3.0 or 3.1 document.
-`check` checks an HTTP response.
-`check` reads the response from a file, from stdin with `-`, or fetches it live with `--url`.
+`check` checks an HTTP response or a HAR (HTTP Archive) recording of responses.
+`check` reads a response or recording from a file, from stdin with `-`, or fetches a response live with `--url`.
 
 ## Installation
 
@@ -45,11 +45,13 @@ docker compose run --rm validator lint /work/openapi.yaml
 ## Usage
 
 ```text
-http-api-spec lint <openapi-file> [--format text|json] [--strict]
-http-api-spec check <response-file|-> [--method M] [--format text|json] [--strict]
-http-api-spec check --url URL [--method GET] [--header "K: V"]... [--timeout 30s] [--format text|json] [--strict]
-http-api-spec version
-http-api-spec help
+Usage:
+  http-api-spec lint <openapi-file> [--format text|json] [--strict]
+  http-api-spec check <response-file|-> [--method M] [--format text|json] [--strict]
+  http-api-spec check <recording.har|-> [--url-filter REGEX] [--all] [--no-group] [--format text|json] [--strict]
+  http-api-spec check --url URL [--method GET] [--header "K: V"]... [--timeout 30s] [--format text|json] [--strict]
+  http-api-spec version
+  http-api-spec help
 ```
 
 `--format` selects `text` (default) or `json`.
@@ -57,8 +59,14 @@ http-api-spec help
 Without it, only MUST findings fail the run.
 `--method` sets the request method of a recorded response.
 With `--url`, it defaults to `GET`.
+`--method` cannot be combined with a HAR file, because each HAR entry carries its own method.
+`--url` cannot be combined with a HAR file or any other input file.
 `--header` adds a request header and can be repeated.
 `--timeout` limits a live request and defaults to 30 seconds.
+
+A file is treated as a HAR recording when its name ends in `.har`, or when its first non-whitespace byte after an optional UTF-8 byte order mark is `{`.
+Stdin (`-`) is detected by content only.
+The HAR flags are described in [Recording responses](#recording-responses).
 
 Lint an OpenAPI document:
 
@@ -103,7 +111,128 @@ http-api-spec check --url https://api.example.com/v1/orders --header "Authorizat
 |------|---------|
 | 0 | Success, no failing findings. |
 | 1 | Findings failed the run. |
-| 2 | Usage or I/O error. |
+| 2 | Usage or I/O error, or a HAR recording with no API entries. |
+
+## Recording responses
+
+HAR 1.2 is the de facto standard for recorded HTTP traffic.
+It is a W3C Web Performance Working Group draft that was never finalised, but browsers and HTTP tools export it.
+A HAR file is JSON, and the recorded exchanges sit in `log.entries`.
+
+### Exporting a HAR file
+
+- Chrome or Edge: open DevTools, go to Network, and choose "Export HAR (sanitized)…" (the download icon).
+- Firefox: open the Network tab, open the gear menu, and choose "Save All As HAR".
+- Safari: open Web Inspector, go to Network, and choose Export.
+- mitmproxy: run `mitmdump --set hardump=./traffic.har`.
+- Playwright: create the context with `browser.newContext({ recordHar: { path: 'traffic.har' } })`.
+- Charles, Proxyman and Fiddler export HAR from their session menus.
+
+For a single response, save the status line and headers with the body:
+
+```sh
+curl -si https://api.example.com/v1/orders > response.http
+```
+
+HTTP/2 and HTTP/3 status lines are accepted.
+
+### What gets checked
+
+By default, `check` looks only at API entries.
+An entry counts as an API entry when one of these holds:
+
+- The response is JSON or `application/problem+json`.
+- The browser marked the request as `fetch` or `xhr`.
+- The method is PUT, PATCH or DELETE.
+
+Use `--url-filter REGEX` to narrow the check to one API, for example `--url-filter '/v1/orders'`.
+The regular expression matches the full request URL.
+Use `--all` to check every entry that has a recorded response.
+HAR entries go through the same rules as a response file.
+
+If no entry matches, the run exits with code 2 and suggests `--url-filter` or `--all`.
+
+Run the check on a Chrome DevTools export:
+
+```sh
+http-api-spec check testdata/har/good-chrome-devtools.har
+```
+
+```text
+checked 3 of 7 entries; skipped 2 non-API, 1 without recorded body, 1 without response
+testdata/har/good-chrome-devtools.har: no findings
+```
+
+The first line goes to stderr, and the second goes to stdout.
+The summary counts every entry that was not checked, grouped by reason.
+
+Run the check on a recording with a repeated violation:
+
+```sh
+go run ./cmd/http-api-spec check testdata/har/bad-naming-camel-case-chromium.har
+```
+
+```text
+checked 5 of 8 entries; skipped 3 non-API
+testdata/har/bad-naming-camel-case-chromium.har: MUST naming-camel-case GET http://127.0.0.1:8080/v1/bad-naming-camel-case-snake #/data/order/customer_id: property "customer_id" is not camelCase (3 entries)
+1 finding(s): 1 MUST, 0 SHOULD
+```
+
+`go run` also prints `exit status 1` because the run failed.
+
+The same violation occurred in three entries, so the output shows one finding with `(3 entries)`.
+Findings merge when they share the subject, the rule, the level, the location and the message.
+The subject has the form `METHOD scheme://host/path`.
+The validator drops userinfo, the query string and the fragment from the subject, so tokens in URLs do not reach the output.
+A URL that cannot be parsed appears as `<invalid URL>`.
+
+Use `--no-group` to list each finding on its own line.
+Each line ends with `(entry #N)`, where N is the 0-based index of the entry in `log.entries`.
+
+```text
+testdata/har/bad-naming-camel-case-chromium.har: MUST naming-camel-case GET http://127.0.0.1:8080/v1/bad-naming-camel-case-snake (entry #4) #/data/order/customer_id: property "customer_id" is not camelCase
+testdata/har/bad-naming-camel-case-chromium.har: MUST naming-camel-case GET http://127.0.0.1:8080/v1/bad-naming-camel-case-snake (entry #5) #/data/order/customer_id: property "customer_id" is not camelCase
+testdata/har/bad-naming-camel-case-chromium.har: MUST naming-camel-case GET http://127.0.0.1:8080/v1/bad-naming-camel-case-snake (entry #6) #/data/order/customer_id: property "customer_id" is not camelCase
+3 finding(s): 3 MUST, 0 SHOULD
+```
+
+Grouping compares paths literally.
+Entries such as `/orders/1` and `/orders/2` do not merge, because their IDs differ.
+
+### Skipped entries
+
+The validator skips these entries and names each reason in the stderr summary:
+
+- Entries without a response, such as blocked or failed requests (`without response`).
+- Entries whose body the tool did not record (`without recorded body`).
+  This includes an entry with an empty `content.text` while `content.size` is above zero, which Firefox writes.
+  Responses with status 204 or 304 are exempt, because they have no body.
+- Entries whose body is larger than 10 MiB (`body exceeds 10 MiB`).
+- Entries with an invalid base64 body (`invalid base64 body`).
+
+The summary lists the reasons in this order: `non-API`, `without recorded body`, `without response`, then the rest alphabetically.
+For a recording with one checked entry and five skipped ones, the summary reads:
+
+```text
+checked 1 of 6 entries; skipped 1 without recorded body, 1 without response, 1 body exceeds 10 MiB, 2 invalid base64 body
+```
+
+### Privacy
+
+HAR files can contain cookies, tokens and personal data in headers and bodies.
+Chrome's and Edge's "Export HAR (sanitized)" removes `Cookie`, `Set-Cookie` and `Authorization` headers.
+The unsanitized export requires the DevTools setting "Allow to generate HAR with sensitive data".
+Sanitizing does not remove secrets in URLs, request bodies or response bodies.
+Review a HAR file before you share it.
+The validator reads HAR files locally and sends nothing anywhere.
+Do not commit raw HAR files from real traffic.
+
+### Limits
+
+- A HAR file may be up to 256 MiB.
+  The validator decodes `log.entries` one entry at a time and releases each body after conversion.
+- A response body may be up to 10 MiB.
+  Larger bodies are skipped, not rejected.
 
 ## Rules
 
@@ -162,10 +291,13 @@ Some checks use heuristics.
   Prefer arrays of objects over dynamic-key maps.
 - Pagination checks the 200 response only.
 - `check` accepts HTTP/1.1, HTTP/2 and HTTP/3 status lines, such as the `HTTP/2 200` that `curl -i` saves.
-- Response bodies and input documents larger than 10 MiB are rejected with exit code 2.
+- Response files and OpenAPI documents larger than 10 MiB are rejected with exit code 2.
 - `check --url` follows up to 10 redirects within the same host.
   A redirect to another host is not followed, so custom `--header` values are never sent there.
   The redirect response itself is checked.
+- Playwright's WebKit recorder splits comma-separated header values.
+  The validator rejoins split HTTP-dates, such as `Thu` and `31 Dec 2026 23:59:59 GMT`, into one value.
+  Other split values, such as two `Vary` entries, stay separate values.
 
 ## Development
 
@@ -191,8 +323,17 @@ export UID GID=$(id -g)
 Write the test first.
 The fixtures under `testdata/` follow a naming convention that the tests enforce.
 
-- Files named `testdata/{openapi,responses}/good-*` must produce no findings.
-- Files named `testdata/{openapi,responses}/bad-<rule-id>-*` must produce findings for that rule only.
+- Files named `testdata/{openapi,responses,har}/good-*` must produce no findings.
+- Files named `testdata/{openapi,responses,har}/bad-<rule-id>-*` must produce findings for that rule only.
+- `testdata/har/empty-no-api.har` is the exception.
+  It has no API entries, so the tests expect exit code 2 for it.
+
+HAR fixtures in `testdata/har/` come from two sources.
+`testdata/har/record/record.sh` regenerates the Playwright recordings with Docker.
+It drives Chromium, Firefox and WebKit, and it overwrites the `good-*` and `bad-*-chromium` fixtures.
+The container images are pinned by digest.
+The script waits until the recorder server accepts connections on `127.0.0.1:8080` before it starts the browsers.
+The `*-devtools.har` fixtures and `empty-no-api.har` come from manual exports, so the script does not touch them.
 
 ## Releases
 
