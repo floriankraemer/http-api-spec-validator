@@ -239,11 +239,25 @@ func TestBearerRules(t *testing.T) {
 		{"not referenced", base("", "  securitySchemes:\n    b: {type: http, scheme: bearer, bearerFormat: JWT}\n"), "bearer-jwt-auth", finding.Must, "#/security"},
 		{"references other", base("security:\n  - k: []\n", "  securitySchemes:\n    b: {type: http, scheme: bearer, bearerFormat: JWT}\n    k: {type: apiKey, name: x, in: header}\n"), "bearer-jwt-auth", finding.Must, "#/security"},
 		{"not JWT", base("security:\n  - b: []\n", "  securitySchemes:\n    b: {type: http, scheme: bearer}\n"), "bearer-jwt-auth", finding.Should, "#/components/securitySchemes/b/bearerFormat"},
+		{"opaque only", base("security:\n  - p: []\n", "  securitySchemes:\n    p: {type: http, scheme: bearer, bearerFormat: opaque}\n"), "bearer-jwt-auth", finding.Should, "#/components/securitySchemes/p/bearerFormat"},
+		{"other format next to JWT", base("security:\n  - b: []\n", "  securitySchemes:\n    b: {type: http, scheme: bearer, bearerFormat: JWT}\n    o: {type: http, scheme: bearer, bearerFormat: PASETO}\n"), "bearer-jwt-auth", finding.Should, "#/components/securitySchemes/o/bearerFormat"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			fs := lintDoc(t, tc.src)
 			if len(fs) != 1 || fs[0].RuleID != tc.rule || fs[0].Level != tc.level || fs[0].Location != tc.loc || fs[0].Line == 0 {
+				t.Fatalf("got %+v", fs)
+			}
+		})
+	}
+}
+
+func TestBearerOpaqueNextToJWT(t *testing.T) {
+	schemes := "  securitySchemes:\n    b: {type: http, scheme: bearer, bearerFormat: JWT}\n    p: {type: http, scheme: bearer, bearerFormat: opaque}\n"
+	for name, security := range map[string]string{"jwt referenced": "security:\n  - b: []\n", "only opaque referenced": "security:\n  - p: []\n"} {
+		t.Run(name, func(t *testing.T) {
+			src := "openapi: 3.1.0\ninfo: {title: t, version: '1'}\n" + security + "paths: {}\ncomponents:\n" + schemes
+			if fs := lintDoc(t, src); len(fs) != 0 {
 				t.Fatalf("got %+v", fs)
 			}
 		})

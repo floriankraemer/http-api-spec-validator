@@ -252,7 +252,7 @@ Some rules report both levels, which the table notes.
 | `error-problem-json` | MUST | 4xx, 5xx and `default` responses use `application/problem+json`. | [Response Categories](../specification/specification.md#response-categories) |
 | `idempotent-tag` | MUST | GET, PUT and DELETE operations carry the `idempotent` tag. | [Idempotency](../specification/specification.md#idempotency) |
 | `no-batch-requests` | MUST | Request bodies use `multipart/mixed`. | [Batch and Bulk Requests](../specification/specification.md#batch-and-bulk-requests) |
-| `bearer-jwt-auth` | MUST, SHOULD | An HTTP bearer scheme exists and the top-level `security` references it. A bearer scheme without `bearerFormat: JWT` is a SHOULD finding. | [Authentication](../specification/specification.md#authentication) |
+| `bearer-jwt-auth` | MUST, SHOULD | An HTTP bearer scheme exists and the top-level `security` references it. A bearer scheme without `bearerFormat: JWT` is a SHOULD finding, except `bearerFormat: opaque` (personal access tokens), which is accepted when the document also defines a JWT bearer scheme. | [Authentication](../specification/specification.md#authentication) |
 | `naming-camel-case` | MUST | Schema property names are camelCase. | [Naming](../specification/specification.md#naming) |
 | `no-underscore-fields` | MUST | Schema property names start with `_` other than `_links` and `_actions`. | [Reserved Fields](../specification/specification.md#reserved-fields) |
 | `hypermedia-shape` | MUST | `_links` and `_actions` have the allowed members and required fields. | [HATEOAS](../specification/specification.md#hateoas) |

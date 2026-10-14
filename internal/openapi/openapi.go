@@ -623,14 +623,25 @@ func (l *linter) checkPagination(item *v3.PathItem, op *v3.Operation, loc string
 func (l *linter) checkBearer(doc *v3.Document) {
 	const schemesLoc = "#/components/securitySchemes"
 	var bearer []string
+	formats := map[string]string{}
+	hasJWT := false
 	if doc.Components != nil {
 		for name, s := range doc.Components.SecuritySchemes.FromOldest() {
 			if s != nil && s.Type == "http" && strings.EqualFold(s.Scheme, "bearer") {
 				bearer = append(bearer, name)
-				if s.BearerFormat != "JWT" {
-					l.add(RuleBearer, finding.Should, finding.Pointer(schemesLoc, name, "bearerFormat"), "bearer scheme %q should declare bearerFormat: JWT", name)
-				}
+				formats[name] = s.BearerFormat
+				hasJWT = hasJWT || s.BearerFormat == "JWT"
 			}
+		}
+	}
+	for _, name := range bearer {
+		loc := finding.Pointer(schemesLoc, name, "bearerFormat")
+		switch {
+		case formats[name] == "JWT", formats[name] == "opaque" && hasJWT:
+		case formats[name] == "opaque":
+			l.add(RuleBearer, finding.Should, loc, "bearer scheme %q: opaque bearer tokens are allowed only for personal access tokens next to a JWT scheme", name)
+		default:
+			l.add(RuleBearer, finding.Should, loc, "bearer scheme %q should declare bearerFormat: JWT", name)
 		}
 	}
 	if len(bearer) == 0 {
