@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/floriankraemer/http-api-spec/validator/internal/finding"
+	"github.com/floriankraemer/http-api-spec-validator/internal/finding"
 )
 
 // header is a valid, finding-free prologue; tests append paths and components.

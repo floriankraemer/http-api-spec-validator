@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/floriankraemer/http-api-spec/validator/internal/response"
+	"github.com/floriankraemer/http-api-spec-validator/internal/response"
 )
 
 func harWith(entry string) string {

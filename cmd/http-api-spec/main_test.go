@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/floriankraemer/http-api-spec/validator/internal/response"
+	"github.com/floriankraemer/http-api-spec-validator/internal/response"
 )
 
 func runCmd(args ...string) (code int, stdout, stderr string) {

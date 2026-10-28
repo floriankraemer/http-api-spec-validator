@@ -1,4 +1,4 @@
-module github.com/floriankraemer/http-api-spec/validator
+module github.com/floriankraemer/http-api-spec-validator
 
 go 1.26.0
 

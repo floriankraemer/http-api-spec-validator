@@ -13,7 +13,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/floriankraemer/http-api-spec/validator/internal/response"
+	"github.com/floriankraemer/http-api-spec-validator/internal/response"
 )
 
 var weekdays = map[string]bool{"Mon": true, "Tue": true, "Wed": true, "Thu": true, "Fri": true, "Sat": true, "Sun": true}

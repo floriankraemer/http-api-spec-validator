@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/floriankraemer/http-api-spec/validator/internal/finding"
-	"github.com/floriankraemer/http-api-spec/validator/internal/jsonrules"
+	"github.com/floriankraemer/http-api-spec-validator/internal/finding"
+	"github.com/floriankraemer/http-api-spec-validator/internal/jsonrules"
 )
 
 func mustParse(t *testing.T, method, raw string) *Response {

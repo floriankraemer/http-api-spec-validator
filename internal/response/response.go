@@ -15,8 +15,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/floriankraemer/http-api-spec/validator/internal/finding"
-	"github.com/floriankraemer/http-api-spec/validator/internal/jsonrules"
+	"github.com/floriankraemer/http-api-spec-validator/internal/finding"
+	"github.com/floriankraemer/http-api-spec-validator/internal/jsonrules"
 )
 
 // Rule IDs reported by this package; shared rules live in package jsonrules.

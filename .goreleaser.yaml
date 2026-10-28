@@ -25,12 +25,8 @@ archives:
     # Snapshot (rolling "latest") archives get a stable name so download URLs never change.
     name_template: "http-api-spec_{{ if .IsSnapshot }}latest{{ else }}{{ .Version }}{{ end }}_{{ .Os }}_{{ .Arch }}"
     files:
-      - src: ../README.md
-        strip_parent: true
-      - src: README.md
-        dst: VALIDATOR.md
-      - src: ../specification/specification.md
-        strip_parent: true
+      - README.md
+      - LICENSE
 
 checksum:
   name_template: checksums.txt

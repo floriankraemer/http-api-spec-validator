@@ -27,4 +27,4 @@ formatters:
   settings:
     goimports:
       local-prefixes:
-        - github.com/floriankraemer/http-api-spec/validator
+        - github.com/floriankraemer/http-api-spec-validator

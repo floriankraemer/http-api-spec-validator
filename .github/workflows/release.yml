@@ -1,0 +1,117 @@
+name: release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  # Single-OS gate; the full OS matrix already runs in ci.yml on the same push.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+      - run: go test -race ./...
+
+  latest:
+    if: github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: release-latest
+      # Never cancel mid-publish; queued runs collapse to the newest.
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      # A queued older run must not move `latest` backwards.
+      - name: Check this commit is still the head of main
+        id: head
+        run: |
+          git fetch origin main
+          if [ "$GITHUB_SHA" = "$(git rev-parse origin/main)" ]; then
+            echo "is_head=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::$GITHUB_SHA is no longer the head of main; skipping the rolling release."
+            echo "is_head=false" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.head.outputs.is_head == 'true'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+      - if: steps.head.outputs.is_head == 'true'
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --snapshot --clean
+      - name: Move latest tag
+        if: steps.head.outputs.is_head == 'true'
+        run: |
+          git tag -f latest "$GITHUB_SHA"
+          git push -f origin refs/tags/latest
+      - name: Publish rolling release
+        if: steps.head.outputs.is_head == 'true'
+        run: |
+          date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          notes="Rolling build of main at commit ${GITHUB_SHA} (${date}).
+          WARNING: this release is overwritten on every push to main. It is unversioned and unsupported; use a versioned release for anything that matters."
+          if gh release view latest >/dev/null 2>&1; then
+            gh release edit latest --title "Latest (main)" --notes "$notes" --prerelease --latest=false
+          else
+            gh release create latest --verify-tag --title "Latest (main)" --notes "$notes" --prerelease --latest=false
+          fi
+          # Upload first (names are stable, so --clobber replaces in place), then drop stale assets;
+          # the release is never empty.
+          gh release upload latest dist/*.tar.gz dist/*.zip dist/checksums.txt --clobber
+          for name in $(gh release view latest --json assets -q '.assets[].name'); do
+            [ -e "dist/$name" ] || gh release delete-asset latest "$name" -y
+          done
+          test "$(gh release view latest --json tagName -q .tagName)" = latest
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Validate tag is semver
+        run: |
+          re='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+          if ! [[ "$GITHUB_REF_NAME" =~ $re ]]; then
+            echo "::error::Tag '$GITHUB_REF_NAME' is not a valid semantic version (expected vMAJOR.MINOR.PATCH[-prerelease][+build])"
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/floriankraemer/http-api-spec/validator/internal/finding"
+	"github.com/floriankraemer/http-api-spec-validator/internal/finding"
 )
 
 func parse(t *testing.T, s string) any {

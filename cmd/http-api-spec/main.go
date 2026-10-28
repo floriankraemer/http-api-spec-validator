@@ -18,10 +18,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/floriankraemer/http-api-spec/validator/internal/finding"
-	"github.com/floriankraemer/http-api-spec/validator/internal/har"
-	"github.com/floriankraemer/http-api-spec/validator/internal/openapi"
-	"github.com/floriankraemer/http-api-spec/validator/internal/response"
+	"github.com/floriankraemer/http-api-spec-validator/internal/finding"
+	"github.com/floriankraemer/http-api-spec-validator/internal/har"
+	"github.com/floriankraemer/http-api-spec-validator/internal/openapi"
+	"github.com/floriankraemer/http-api-spec-validator/internal/response"
 )
 
 const (

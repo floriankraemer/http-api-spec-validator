@@ -1,6 +1,6 @@
 # Validator
 
-`http-api-spec` is a command line validator that checks OpenAPI documents and HTTP responses against the [HTTP API Design Standard](../specification/specification.md).
+`http-api-spec` is a command line validator that checks OpenAPI documents and HTTP responses against the [HTTP API Design Standard](https://github.com/floriankraemer/http-api-spec/blob/main/specification/specification.md).
 `http-api-spec` has two commands.
 `lint` checks an OpenAPI 3.0 or 3.1 document.
 `check` checks an HTTP response or a HAR (HTTP Archive) recording of responses.
@@ -16,27 +16,24 @@ Archives exist for Linux, macOS and Windows on amd64 and arm64.
 The archive names follow `http-api-spec_<version>_<os>_<arch>`, and `http-api-spec_latest_<os>_<arch>` for the rolling release.
 Verify the download against `checksums.txt`.
 
-The repository is currently private, so downloads need an authenticated GitHub CLI:
-
 ```sh
-gh release download latest -R floriankraemer/http-api-spec -p '*linux_amd64*' -p checksums.txt
+gh release download latest -R floriankraemer/http-api-spec-validator -p '*linux_amd64*' -p checksums.txt
 sha256sum --ignore-missing -c checksums.txt
 ```
 
 ### Go
 
 ```sh
-GOPRIVATE=github.com/floriankraemer/* go install github.com/floriankraemer/http-api-spec/validator/cmd/http-api-spec@latest
+go install github.com/floriankraemer/http-api-spec-validator/cmd/http-api-spec@latest
 ```
 
-`GOPRIVATE` is required while the repository is private.
-`@latest` installs the newest commit on `main`, because release tags are not module-prefixed (`validator/vX.Y.Z`).
-Versioned binaries come from GitHub Releases.
+`@latest` installs the newest `vX.Y.Z` release.
+Until a release exists, it installs the newest commit on `main`.
 
 ### Docker
 
 The Compose file builds a `validator` image.
-Only the `validator/` directory is mounted, at `/work`, so the input file must sit inside it.
+The repository directory is mounted, at `/work`, so the input file must sit inside it.
 
 ```sh
 docker compose run --rm validator lint /work/openapi.yaml
@@ -246,33 +243,33 @@ Some rules report both levels, which the table notes.
 
 | Rule ID | Level | What it checks | Spec section |
 |---------|-------|----------------|--------------|
-| `version-path-prefix` | MUST | Paths start with a version segment such as `/v1`, or every applicable server URL ends in one (path-item `servers`, else top-level `servers`, with variables resolved to their defaults). | [Versioning](../specification/specification.md#versioning) |
-| `locale-not-in-url` | MUST | Paths or query parameters carry a locale. | [Localization](../specification/specification.md#localization) |
-| `success-data-envelope` | MUST | 2xx JSON response schemas are objects with an object `data` property. | [Response Structure](../specification/specification.md#response-structure) |
-| `error-problem-json` | MUST | 4xx, 5xx and `default` responses use `application/problem+json`. | [Response Categories](../specification/specification.md#response-categories) |
-| `idempotent-tag` | MUST | GET, PUT and DELETE operations carry the `idempotent` tag. | [Idempotency](../specification/specification.md#idempotency) |
-| `no-batch-requests` | MUST | Request bodies use `multipart/mixed`. | [Batch and Bulk Requests](../specification/specification.md#batch-and-bulk-requests) |
-| `bearer-jwt-auth` | MUST, SHOULD | An HTTP bearer scheme exists and the top-level `security` references it. A bearer scheme without `bearerFormat: JWT` is a SHOULD finding, except `bearerFormat: opaque` (personal access tokens), which is accepted when the document also defines a JWT bearer scheme. | [Authentication](../specification/specification.md#authentication) |
-| `naming-camel-case` | MUST | Schema property names are camelCase. | [Naming](../specification/specification.md#naming) |
-| `no-underscore-fields` | MUST | Schema property names start with `_` other than `_links` and `_actions`. | [Reserved Fields](../specification/specification.md#reserved-fields) |
-| `hypermedia-shape` | MUST | `_links` and `_actions` have the allowed members and required fields. | [HATEOAS](../specification/specification.md#hateoas) |
-| `pagination-shape` | MUST | Operations do not combine `page` and `offset`. Paginated 200 responses have a `pagination` schema with the required properties. | [Pagination](../specification/specification.md#pagination) |
+| `version-path-prefix` | MUST | Paths start with a version segment such as `/v1`, or every applicable server URL ends in one (path-item `servers`, else top-level `servers`, with variables resolved to their defaults). | [Versioning](https://github.com/floriankraemer/http-api-spec/blob/main/specification/specification.md#versioning) |
+| `locale-not-in-url` | MUST | Paths or query parameters carry a locale. | [Localization](https://github.com/floriankraemer/http-api-spec/blob/main/specification/specification.md#localization) |
+| `success-data-envelope` | MUST | 2xx JSON response schemas are objects with an object `data` property. | [Response Structure](https://github.com/floriankraemer/http-api-spec/blob/main/specification/specification.md#response-structure) |
+| `error-problem-json` | MUST | 4xx, 5xx and `default` responses use `application/problem+json`. | [Response Categories](https://github.com/floriankraemer/http-api-spec/blob/main/specification/specification.md#response-categories) |
+| `idempotent-tag` | MUST | GET, PUT and DELETE operations carry the `idempotent` tag. | [Idempotency](https://github.com/floriankraemer/http-api-spec/blob/main/specification/specification.md#idempotency) |
+| `no-batch-requests` | MUST | Request bodies use `multipart/mixed`. | [Batch and Bulk Requests](https://github.com/floriankraemer/http-api-spec/blob/main/specification/specification.md#batch-and-bulk-requests) |
+| `bearer-jwt-auth` | MUST, SHOULD | An HTTP bearer scheme exists and the top-level `security` references it. A bearer scheme without `bearerFormat: JWT` is a SHOULD finding, except `bearerFormat: opaque` (personal access tokens), which is accepted when the document also defines a JWT bearer scheme. | [Authentication](https://github.com/floriankraemer/http-api-spec/blob/main/specification/specification.md#authentication) |
+| `naming-camel-case` | MUST | Schema property names are camelCase. | [Naming](https://github.com/floriankraemer/http-api-spec/blob/main/specification/specification.md#naming) |
+| `no-underscore-fields` | MUST | Schema property names start with `_` other than `_links` and `_actions`. | [Reserved Fields](https://github.com/floriankraemer/http-api-spec/blob/main/specification/specification.md#reserved-fields) |
+| `hypermedia-shape` | MUST | `_links` and `_actions` have the allowed members and required fields. | [HATEOAS](https://github.com/floriankraemer/http-api-spec/blob/main/specification/specification.md#hateoas) |
+| `pagination-shape` | MUST | Operations do not combine `page` and `offset`. Paginated 200 responses have a `pagination` schema with the required properties. | [Pagination](https://github.com/floriankraemer/http-api-spec/blob/main/specification/specification.md#pagination) |
 
 ### Check
 
 | Rule ID | Level | What it checks | Spec section |
 |---------|-------|----------------|--------------|
-| `status-category` | MUST | Status is 100 to 599. Bodies match the category: a success body is a JSON object with `data`, an error body is problem JSON, and `Content-Type` matches. | [Response Categories](../specification/specification.md#response-categories) |
-| `deprecation-headers` | MUST | `Deprecation` is `@<unix-timestamp>` and `Sunset` is an HTTP date. | [Deprecation and Sunset Headers](../specification/specification.md#deprecation-and-sunset-headers) |
-| `delete-status` | MUST | A successful DELETE answers 200, 202 or 204. | [Delete Operations](../specification/specification.md#delete-operations) |
-| `obfuscated-ids` | SHOULD | Members named `id`, `*Id` or `*ID` are not JSON numbers. | [ID Obfuscation](../specification/specification.md#id-obfuscation) |
-| `naming-camel-case` | MUST | Body property names are camelCase. | [Naming](../specification/specification.md#naming) |
-| `no-underscore-fields` | MUST | Body property names start with `_` other than `_links` and `_actions`. | [Reserved Fields](../specification/specification.md#reserved-fields) |
-| `hypermedia-shape` | MUST, SHOULD | `_links` and `_actions` have the allowed members and required fields. An empty `_links` or `_actions` object is a SHOULD finding. | [HATEOAS](../specification/specification.md#hateoas) |
-| `pagination-shape` | MUST | Pagination members have the required integer properties and no unexpected ones. Pagination is top-level only. | [Pagination](../specification/specification.md#pagination) |
-| `problem-details` | MUST | Error bodies have a string `title`, a string `type` (a missing `type` is only a SHOULD finding, as RFC 9457 defaults it to `about:blank`), an integer `status` equal to the HTTP status, and valid `detail`, `instance` and `errors` members. | [Error and Failure Messages](../specification/specification.md#error-and-failure-messages) |
-| `error-code-format` | MUST | The `code` member has the form `<component>-<error>`. | [Error Codes](../specification/specification.md#error-codes) |
-| `no-debug-field` | MUST | Error bodies have no `debug` member. | [Error and Failure Messages](../specification/specification.md#error-and-failure-messages) |
+| `status-category` | MUST | Status is 100 to 599. Bodies match the category: a success body is a JSON object with `data`, an error body is problem JSON, and `Content-Type` matches. | [Response Categories](https://github.com/floriankraemer/http-api-spec/blob/main/specification/specification.md#response-categories) |
+| `deprecation-headers` | MUST | `Deprecation` is `@<unix-timestamp>` and `Sunset` is an HTTP date. | [Deprecation and Sunset Headers](https://github.com/floriankraemer/http-api-spec/blob/main/specification/specification.md#deprecation-and-sunset-headers) |
+| `delete-status` | MUST | A successful DELETE answers 200, 202 or 204. | [Delete Operations](https://github.com/floriankraemer/http-api-spec/blob/main/specification/specification.md#delete-operations) |
+| `obfuscated-ids` | SHOULD | Members named `id`, `*Id` or `*ID` are not JSON numbers. | [ID Obfuscation](https://github.com/floriankraemer/http-api-spec/blob/main/specification/specification.md#id-obfuscation) |
+| `naming-camel-case` | MUST | Body property names are camelCase. | [Naming](https://github.com/floriankraemer/http-api-spec/blob/main/specification/specification.md#naming) |
+| `no-underscore-fields` | MUST | Body property names start with `_` other than `_links` and `_actions`. | [Reserved Fields](https://github.com/floriankraemer/http-api-spec/blob/main/specification/specification.md#reserved-fields) |
+| `hypermedia-shape` | MUST, SHOULD | `_links` and `_actions` have the allowed members and required fields. An empty `_links` or `_actions` object is a SHOULD finding. | [HATEOAS](https://github.com/floriankraemer/http-api-spec/blob/main/specification/specification.md#hateoas) |
+| `pagination-shape` | MUST | Pagination members have the required integer properties and no unexpected ones. Pagination is top-level only. | [Pagination](https://github.com/floriankraemer/http-api-spec/blob/main/specification/specification.md#pagination) |
+| `problem-details` | MUST | Error bodies have a string `title`, a string `type` (a missing `type` is only a SHOULD finding, as RFC 9457 defaults it to `about:blank`), an integer `status` equal to the HTTP status, and valid `detail`, `instance` and `errors` members. | [Error and Failure Messages](https://github.com/floriankraemer/http-api-spec/blob/main/specification/specification.md#error-and-failure-messages) |
+| `error-code-format` | MUST | The `code` member has the form `<component>-<error>`. | [Error Codes](https://github.com/floriankraemer/http-api-spec/blob/main/specification/specification.md#error-codes) |
+| `no-debug-field` | MUST | Error bodies have no `debug` member. | [Error and Failure Messages](https://github.com/floriankraemer/http-api-spec/blob/main/specification/specification.md#error-and-failure-messages) |
 
 ## Limitations
 
@@ -302,10 +299,7 @@ Some checks use heuristics.
 ## Development
 
 Development runs through Docker Compose.
-Run the commands from the `validator/` directory.
-
 ```sh
-cd validator
 docker compose run --rm dev                        # go test -race ./...
 docker compose run --rm dev go test ./internal/openapi/
 docker compose run --rm lint                       # golangci-lint run ./...
@@ -353,4 +347,5 @@ git push origin v0.1.0
 
 Copyright © Florian Krämer.
 
-This work is licensed under the [Creative Commons Attribution 4.0 International License (CC BY 4.0)](https://creativecommons.org/licenses/by/4.0/deed.en).
+The source code is licensed under the [MIT License](LICENSE).
+The [HTTP API Design Standard](https://github.com/floriankraemer/http-api-spec/blob/main/specification/specification.md) is licensed separately under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/deed.en).

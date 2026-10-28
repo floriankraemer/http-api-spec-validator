@@ -17,8 +17,8 @@ import (
 	v3 "github.com/pb33f/libopenapi/datamodel/high/v3"
 	"github.com/pb33f/libopenapi/orderedmap"
 
-	"github.com/floriankraemer/http-api-spec/validator/internal/finding"
-	"github.com/floriankraemer/http-api-spec/validator/internal/jsonrules"
+	"github.com/floriankraemer/http-api-spec-validator/internal/finding"
+	"github.com/floriankraemer/http-api-spec-validator/internal/jsonrules"
 )
 
 // Rule IDs reported by Lint in addition to the ones shared with package jsonrules.

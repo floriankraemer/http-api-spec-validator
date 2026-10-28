@@ -10,7 +10,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/floriankraemer/http-api-spec/validator/internal/finding"
+	"github.com/floriankraemer/http-api-spec-validator/internal/finding"
 )
 
 // Rule IDs reported by this package.
