@@ -1,4 +1,4 @@
-# Validator
+# HTTP API Spec Validator
 
 `http-api-spec` is a command line validator that checks OpenAPI documents and HTTP responses against the [HTTP API Design Standard](https://github.com/floriankraemer/http-api-spec/blob/main/specification/specification.md).
 `http-api-spec` has two commands.
