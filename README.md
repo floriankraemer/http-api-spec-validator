@@ -346,3 +346,11 @@ Any other `v*` tag fails the workflow.
 git tag v0.1.0
 git push origin v0.1.0
 ```
+
+---
+
+## License
+
+Copyright © Florian Krämer.
+
+This work is licensed under the [Creative Commons Attribution 4.0 International License (CC BY 4.0)](https://creativecommons.org/licenses/by/4.0/deed.en).
